@@ -109,7 +109,7 @@ export function buildInjectedArgs(
   // Nudge the subagent to prefer its MCP tools over built-in alternatives.
   // Users can override with their own --system-prompt in the parent call.
   const profilePrompt = profileName && config.profiles[profileName]?.systemPrompt;
-  const defaultPrompt = "You have MCP tools available. Always prefer MCP tools over built-in tools like WebFetch or WebSearch when they can accomplish the task.";
+  const defaultPrompt = "IMPORTANT: You have MCP tools available. You MUST use MCP tools (mcp__*) instead of WebFetch, WebSearch, or Fetch for any information retrieval task. Do not fetch URLs directly — use your MCP tools to find and retrieve the information.";
   newArgs.push("--system-prompt", profilePrompt ?? defaultPrompt);
 
   // Pre-approve injected MCP tools so subagents don't hit permission prompts

@@ -68,7 +68,7 @@ export async function query(
   if (maxBudget) {
     args.push("--max-budget-usd", maxBudget.toString());
   }
-  const defaultPrompt = "You have MCP tools available. Always prefer MCP tools over built-in tools like WebFetch or WebSearch when they can accomplish the task.";
+  const defaultPrompt = "IMPORTANT: You have MCP tools available. You MUST use MCP tools (mcp__*) instead of WebFetch, WebSearch, or Fetch for any information retrieval task. Do not fetch URLs directly — use your MCP tools to find and retrieve the information.";
   args.push("--system-prompt", profile.systemPrompt ?? defaultPrompt);
 
   const claudePath = getRealClaudePath();
