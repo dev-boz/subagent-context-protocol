@@ -1,4 +1,4 @@
-# subagent-context-protocol (SCP)
+# subagent-context-protocol
 
 **Give AI coding agents MCP access with zero token overhead in the main session.**
 
@@ -6,11 +6,11 @@
 
 MCP (Model Context Protocol) tool definitions consume 500-850 tokens each. 5 MCP servers can eat 40-60k tokens in schema definitions, permanently sitting in context even when most tools go unused. That's context window you're paying for on every turn.
 
-Everyone wants dynamic MCP loading. Nobody has shipped it yet. Cursor achieved 46.9% reduction with lazy loading. SCP achieves effectively **100% reduction**.
+Everyone wants dynamic MCP loading. Nobody has shipped it yet. Cursor achieved 46.9% reduction with lazy loading. subagent-context-protocol achieves effectively **100% reduction**.
 
-## How SCP solves it
+## How it works
 
-SCP installs a transparent wrapper around the `claude` binary. The main agent runs clean — no MCPs loaded, no schema overhead. When it spawns a subagent (via the Agent tool, `claude -p`, or any subprocess), the wrapper intercepts the call and injects MCP server configurations automatically. The subagent gets full MCP access. The main agent never knows.
+subagent-context-protocol installs a transparent wrapper around the `claude` binary. The main agent runs clean — no MCPs loaded, no schema overhead. When it spawns a subagent (via the Agent tool, `claude -p`, or any subprocess), the wrapper intercepts the call and injects MCP server configurations automatically. The subagent gets full MCP access. The main agent never knows.
 
 ```
 Main Agent (clean context, zero MCP overhead)
@@ -168,7 +168,7 @@ src/
 | Load all MCPs directly | 40-60k tokens permanent | Yes |
 | Lazy MCP loading (Cursor-style) | ~50% reduction | Yes |
 | MCP-as-MCP-server | ~800 tokens (one tool schema) | Mostly |
-| **SCP wrapper** | **0 tokens** | **Yes — fully transparent** |
+| **subagent-context-protocol** | **0 tokens** | **Yes — fully transparent** |
 
 ## Phase 2 (planned)
 

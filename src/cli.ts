@@ -34,7 +34,7 @@ const program = new Command();
 
 program
   .name("scp")
-  .description("Subagent Context Protocol — zero-overhead MCP proxy")
+  .description("subagent-context-protocol — zero-overhead MCP proxy for AI coding agents")
   .version("0.1.0");
 
 program
