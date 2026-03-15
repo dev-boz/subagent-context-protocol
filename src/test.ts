@@ -311,3 +311,118 @@ describe("resolveEnvVarsInJson()", () => {
     assert.equal(result, input);
   });
 });
+
+// ---------------------------------------------------------------------------
+// cache format tests
+// ---------------------------------------------------------------------------
+
+describe("cache format", () => {
+  it("includes profiles and defaults alongside mcpServers", () => {
+    const dir = makeTempDir();
+    try {
+      const yml = `
+mcpServers:
+  alpha:
+    command: node
+    args: ["a.js"]
+  beta:
+    command: node
+    args: ["b.js"]
+
+profiles:
+  onlyAlpha:
+    description: "just alpha"
+    servers: [alpha]
+    isolateMcp: true
+  all:
+    description: "everything"
+    servers: [alpha, beta]
+
+defaults:
+  profile: onlyAlpha
+  maxBudget: 2.0
+`;
+      writeTempConfig(dir, "profiles.yml", yml);
+      const config = loadConfig(join(dir, "profiles.yml"));
+
+      // Build cache the same way cli.ts does
+      const cache = {
+        mcpServers: config.mcpServers,
+        profiles: Object.fromEntries(
+          Object.entries(config.profiles).map(([name, p]) => [
+            name,
+            { servers: p.servers, isolateMcp: p.isolateMcp },
+          ])
+        ),
+        defaults: config.defaults,
+      };
+
+      // Verify structure
+      assert.ok(cache.mcpServers["alpha"]);
+      assert.ok(cache.mcpServers["beta"]);
+      assert.deepStrictEqual(cache.profiles["onlyAlpha"].servers, ["alpha"]);
+      assert.equal(cache.profiles["onlyAlpha"].isolateMcp, true);
+      assert.deepStrictEqual(cache.profiles["all"].servers, ["alpha", "beta"]);
+      assert.equal(cache.defaults?.profile, "onlyAlpha");
+      assert.equal(cache.defaults?.maxBudget, 2.0);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// defaults.profile tests
+// ---------------------------------------------------------------------------
+
+describe("defaults.profile", () => {
+  it("parses defaults.profile from config", () => {
+    const dir = makeTempDir();
+    try {
+      const yml = `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  myprofile:
+    description: "test"
+    servers: [s]
+
+defaults:
+  profile: myprofile
+`;
+      writeTempConfig(dir, "profiles.yml", yml);
+      const config = loadConfig(join(dir, "profiles.yml"));
+      assert.equal(config.defaults?.profile, "myprofile");
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("defaults.profile is optional", () => {
+    const dir = makeTempDir();
+    try {
+      const yml = `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  p:
+    description: "test"
+    servers: [s]
+
+defaults:
+  maxBudget: 1.0
+`;
+      writeTempConfig(dir, "profiles.yml", yml);
+      const config = loadConfig(join(dir, "profiles.yml"));
+      assert.equal(config.defaults?.profile, undefined);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+});

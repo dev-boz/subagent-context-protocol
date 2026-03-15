@@ -19,6 +19,7 @@ export interface ScpConfig {
   defaults?: {
     model?: string;
     maxBudget?: number;
+    profile?: string;
   };
 }
 

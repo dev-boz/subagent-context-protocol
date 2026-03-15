@@ -116,16 +116,26 @@ program
       // Save real claude path (atomic)
       atomicWrite(join(SCP_DIR, "real-claude-path"), realClaude);
 
-      // Pre-compute MCP config JSON — env vars kept as ${VAR} placeholders,
-      // resolved at runtime by the wrapper. No secrets on disk.
-      const mcpJson = JSON.stringify({ mcpServers: config.mcpServers });
-      atomicWrite(join(SCP_DIR, "mcp-config.json"), mcpJson, 0o600);
+      // Pre-compute MCP config JSON — includes profiles and defaults so the
+      // wrapper can filter by SCP_PROFILE. Env vars kept as ${VAR} placeholders,
+      // resolved at runtime. No secrets on disk.
+      const cache = {
+        mcpServers: config.mcpServers,
+        profiles: Object.fromEntries(
+          Object.entries(config.profiles).map(([name, p]) => [
+            name,
+            { servers: p.servers, isolateMcp: p.isolateMcp },
+          ])
+        ),
+        defaults: config.defaults,
+      };
+      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(cache), 0o600);
 
-      // Install wrapper as ~/.scp/bin/claude
-      const wrapperSrc = join(__dirname, "wrapper.js");
+      // Install wrapper + argv helper to ~/.scp/bin/
       const wrapperDst = join(BIN_DIR, "claude");
-      copyFileSync(wrapperSrc, wrapperDst);
+      copyFileSync(join(__dirname, "wrapper.js"), wrapperDst);
       chmodSync(wrapperDst, 0o755);
+      copyFileSync(join(__dirname, "argv.js"), join(BIN_DIR, "argv.js"));
 
       console.log(`Installed wrapper to ${wrapperDst}`);
       console.log(`Real claude: ${realClaude}`);
@@ -149,10 +159,8 @@ program
   .command("uninstall")
   .description("Remove the claude wrapper")
   .action(() => {
-    const wrapperPath = join(BIN_DIR, "claude");
-    if (existsSync(wrapperPath)) {
-      rmSync(wrapperPath);
-      console.log(`Removed ${wrapperPath}`);
+    for (const f of [join(BIN_DIR, "claude"), join(BIN_DIR, "argv.js")]) {
+      if (existsSync(f)) rmSync(f);
     }
     for (const f of ["real-claude-path", "mcp-config.json"]) {
       const p = join(SCP_DIR, f);
@@ -168,8 +176,17 @@ program
   .action((opts: Record<string, string | undefined>) => {
     try {
       const config = loadConfig(opts.config);
-      const mcpJson = JSON.stringify({ mcpServers: config.mcpServers });
-      atomicWrite(join(SCP_DIR, "mcp-config.json"), mcpJson, 0o600);
+      const cache = {
+        mcpServers: config.mcpServers,
+        profiles: Object.fromEntries(
+          Object.entries(config.profiles).map(([name, p]) => [
+            name,
+            { servers: p.servers, isolateMcp: p.isolateMcp },
+          ])
+        ),
+        defaults: config.defaults,
+      };
+      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(cache), 0o600);
       console.log(
         `Updated MCP config: ${Object.keys(config.mcpServers).join(", ")}`
       );

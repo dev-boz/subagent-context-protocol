@@ -1,19 +1,17 @@
 # subagent-context-protocol
 
-**Give AI coding agents MCP access with zero token overhead in the main session.**
+**Give AI coding agents MCP access without loading schemas into the main session.**
 
 ## The problem
 
 MCP (Model Context Protocol) tool definitions consume 500-850 tokens each. 5 MCP servers can eat 40-60k tokens in schema definitions, permanently sitting in context even when most tools go unused. That's context window you're paying for on every turn.
 
-Everyone wants dynamic MCP loading. Nobody has shipped it yet. Cursor achieved 46.9% reduction with lazy loading. subagent-context-protocol achieves effectively **100% reduction**.
-
 ## How it works
 
-subagent-context-protocol installs a transparent wrapper around the `claude` binary. The main agent runs clean — no MCPs loaded, no schema overhead. When it spawns a subagent (via the Agent tool, `claude -p`, or any subprocess), the wrapper intercepts the call and injects MCP server configurations automatically. The subagent gets full MCP access. The main agent never knows.
+subagent-context-protocol installs a transparent wrapper around the `claude` binary. The main agent runs clean — no MCPs loaded, no schema overhead. When it spawns a subagent (via the Agent tool, `claude -p`, or any subprocess), the wrapper intercepts the call and injects MCP server configurations. The subagent gets full MCP access. The main agent never sees the schemas.
 
 ```
-Main Agent (clean context, zero MCP overhead)
+Main Agent (clean context, no MCP schemas)
     │
     └─ spawns subagent: claude -p "look up React docs"
                             │
@@ -50,11 +48,11 @@ export PATH="$HOME/.scp/bin:$PATH"
 
 ## How the wrapper works
 
-1. `scp install` finds your real `claude` binary, saves its path, and installs a Node.js wrapper at `~/.scp/bin/claude`
+1. `scp install` finds your real `claude` binary, saves its path, and installs a wrapper at `~/.scp/bin/claude`
 2. The wrapper sits earlier in PATH than the real binary
 3. On every `claude` invocation, the wrapper checks if `-p`/`--print` is in the args (subagent/non-interactive mode)
-4. If yes: injects `--mcp-config` with your configured MCP servers, then execs the real `claude`
-5. If no (interactive mode): pure passthrough, zero overhead
+4. If yes: injects `--mcp-config` with the appropriate MCP servers, then execs the real `claude`
+5. If no (interactive mode): pure passthrough
 
 The main agent never sees MCP schemas. Subagents discover and use MCP tools naturally.
 
@@ -87,6 +85,7 @@ profiles:
     servers: []
 
 defaults:
+  profile: docs           # default profile for subagent injection (omit to inject all servers)
   maxBudget: 1.0
 ```
 
@@ -100,6 +99,14 @@ defaults:
 | `isolateMcp` | no | If `true`, subagent only gets this profile's MCPs. If `false`/omitted, inherits parent MCPs + adds profile ones. |
 | `maxBudget` | no | Max spend in USD for this profile |
 | `systemPrompt` | no | Custom system prompt for subagents using this profile |
+
+### Profile selection
+
+The wrapper decides which MCPs to inject using this priority:
+
+1. `SCP_PROFILE` env var — e.g. `SCP_PROFILE=docs claude -p "look up migrations"`
+2. `defaults.profile` in profiles.yml — the default profile for all subagent calls
+3. If neither is set, all configured MCP servers are injected
 
 ### Environment variables
 
@@ -121,6 +128,7 @@ scp refresh
 scp install [--config <path>]     # Install wrapper, pre-compute MCP config
 scp uninstall                     # Remove wrapper, restore direct claude
 scp refresh [--config <path>]     # Re-read profiles.yml after config changes
+scp debug [--config <path>]       # Show wrapper state and resolved config
 
 # Direct query (explicit profile routing, bypasses wrapper)
 scp query -p <profile> <prompt>   # Send a query through a named profile
@@ -131,44 +139,48 @@ scp query -p docs --model haiku "explain React hooks"
 scp profiles [--config <path>]    # List available profiles
 ```
 
+## Install layout
+
+After `scp install`, the following files are created:
+
+```
+~/.scp/
+├── bin/
+│   ├── claude          # wrapper script (earlier in PATH than real binary)
+│   └── argv.js         # arg parser module (imported by wrapper)
+├── real-claude-path    # absolute path to the real claude binary
+└── mcp-config.json     # pre-computed MCP config cache (no secrets, env vars as placeholders)
+```
+
 ## Architecture
 
 ```
-profiles.yml                     ~/.scp/
-├─ mcpServers:                   ├─ bin/claude          (wrapper script)
-│   context7: {command, args}    ├─ real-claude-path    (absolute path to real binary)
-│   github: {command, args, env} └─ mcp-config.json     (pre-computed, no secrets)
-└─ profiles:
-    docs: {servers: [context7]}
-    github: {servers: [github]}
-```
-
-```
 src/
-├─ wrapper.ts    Transparent claude wrapper (zero external deps)
-├─ cli.ts        CLI: install, uninstall, refresh, query, profiles
+├─ wrapper.ts    Transparent claude wrapper (node builtins + argv.js only)
+├─ argv.ts       Shared arg parser and env var resolver
+├─ cli.ts        CLI: install, uninstall, refresh, query, profiles, debug
 ├─ config.ts     YAML config loader with validation
 ├─ spawner.ts    Direct subprocess spawner (for scp query)
-└─ types.ts      TypeScript interfaces
+├─ types.ts      TypeScript interfaces
+└─ test.ts       Test suite (node:test)
 ```
 
 ## Security
 
-- **No secrets on disk**: Env vars (`${GITHUB_TOKEN}`, etc.) are stored as placeholders in `mcp-config.json` and resolved at runtime
-- **Atomic writes**: Config files use write-to-temp-then-rename to prevent corrupted reads from concurrent access
+- **No secrets on disk**: Env vars are stored as `${VAR}` placeholders in `mcp-config.json` and resolved at runtime
+- **Process list visibility**: Resolved env vars appear in process arguments for the duration of the subagent call. On shared systems, use short-lived tokens.
+- **Atomic writes**: Config files use write-to-temp-then-rename to prevent corrupted reads
 - **No shell injection**: Wrapper uses `spawn()` with an args array, never shell interpolation
-- **Stale path recovery**: If the saved claude path goes stale (after an update), the wrapper falls back to PATH search
-- **Proper argv parsing**: Flag detection uses a state machine that handles `--flag=value` forms and value-consuming flags
-- **File permissions**: `mcp-config.json` written with `0600` (owner-only)
+- **Stale path recovery**: If the saved claude path goes stale, the wrapper falls back to PATH search
 
-## How it compares to alternatives
+## How it compares
 
 | Approach | Main agent context cost | Seamless? |
 |----------|------------------------|-----------|
 | Load all MCPs directly | 40-60k tokens permanent | Yes |
 | Lazy MCP loading (Cursor-style) | ~50% reduction | Yes |
 | MCP-as-MCP-server | ~800 tokens (one tool schema) | Mostly |
-| **subagent-context-protocol** | **0 tokens** | **Yes — fully transparent** |
+| **subagent-context-protocol** | **0 tokens in main session** | **Transparent for subagent calls** |
 
 ## Verifying it works
 
@@ -179,33 +191,39 @@ which claude  # should show ~/.scp/bin/claude
 # Verify subagent gets MCP tools
 claude -p "list your MCP tools" --output-format json --no-session-persistence
 
-# Test direct query
-scp query -p docs --raw "what is Context7"
-
-# Inspect resolved MCP config
+# Inspect resolved config
 scp debug
+
+# Test with bypass to confirm real claude still works
+SCP_BYPASS=1 claude --version
 ```
 
 ## Troubleshooting
 
 **Claude Code stopped working after install**
-Run `scp uninstall` to remove the wrapper and restore the direct binary immediately.
+Run `scp uninstall` to remove the wrapper. Or set `SCP_BYPASS=1` for immediate passthrough without uninstalling.
 
 **MCP server not connecting**
-Check `scp profiles` output to verify your server configuration. Make sure the server command (e.g. `npx`) is available in your PATH.
+Run `scp debug` to verify your config. Make sure the server command (e.g. `npx`) is available in your PATH.
 
 **"Environment variable not set" warning**
 The wrapper resolves `${VAR}` references at runtime. Make sure the variable is exported in your shell, not just set in a dotfile that hasn't been sourced.
 
 **Stale claude path after update**
-If you update claude CLI, the wrapper auto-recovers by searching PATH. If it can't find it, run `scp install` again.
+The wrapper auto-recovers by searching PATH. If it still fails, run `scp install` again.
+
+**Want to bypass the wrapper temporarily**
+```bash
+SCP_BYPASS=1 claude -p "this call skips MCP injection"
+```
 
 ## Limitations
 
 - **Claude Code only** — other agents (Codex, Gemini CLI) are not yet supported
 - **Subagent mode only** — the wrapper intercepts `claude -p` subprocess calls, not interactive sessions
 - **MCP startup latency remains** — subagent-context-protocol eliminates token overhead, not MCP server connection time
-- **Config changes need refresh** — after editing profiles.yml, run `scp refresh` to update the pre-computed config
+- **Process list exposure** — resolved env vars are visible in `ps` for the duration of the subagent call
+- **Config changes need refresh** — after editing profiles.yml, run `scp refresh`
 
 ## Phase 2 (planned)
 
