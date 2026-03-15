@@ -170,6 +170,43 @@ src/
 | MCP-as-MCP-server | ~800 tokens (one tool schema) | Mostly |
 | **subagent-context-protocol** | **0 tokens** | **Yes — fully transparent** |
 
+## Verifying it works
+
+```bash
+# Check wrapper is active
+which claude  # should show ~/.scp/bin/claude
+
+# Verify subagent gets MCP tools
+claude -p "list your MCP tools" --output-format json --no-session-persistence
+
+# Test direct query
+scp query -p docs --raw "what is Context7"
+
+# Inspect resolved MCP config
+scp debug
+```
+
+## Troubleshooting
+
+**Claude Code stopped working after install**
+Run `scp uninstall` to remove the wrapper and restore the direct binary immediately.
+
+**MCP server not connecting**
+Check `scp profiles` output to verify your server configuration. Make sure the server command (e.g. `npx`) is available in your PATH.
+
+**"Environment variable not set" warning**
+The wrapper resolves `${VAR}` references at runtime. Make sure the variable is exported in your shell, not just set in a dotfile that hasn't been sourced.
+
+**Stale claude path after update**
+If you update claude CLI, the wrapper auto-recovers by searching PATH. If it can't find it, run `scp install` again.
+
+## Limitations
+
+- **Claude Code only** — other agents (Codex, Gemini CLI) are not yet supported
+- **Subagent mode only** — the wrapper intercepts `claude -p` subprocess calls, not interactive sessions
+- **MCP startup latency remains** — subagent-context-protocol eliminates token overhead, not MCP server connection time
+- **Config changes need refresh** — after editing profiles.yml, run `scp refresh` to update the pre-computed config
+
 ## Phase 2 (planned)
 
 - Automatic profile routing based on prompt content

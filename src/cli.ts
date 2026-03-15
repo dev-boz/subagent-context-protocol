@@ -10,6 +10,7 @@ import {
   existsSync,
   renameSync,
   rmSync,
+  readFileSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -172,6 +173,53 @@ program
       console.log(
         `Updated MCP config: ${Object.keys(config.mcpServers).join(", ")}`
       );
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("debug")
+  .description("Show the resolved MCP config that would be injected into subagents")
+  .option("--config <path>", "Path to profiles.yml")
+  .action((opts: Record<string, string | undefined>) => {
+    try {
+      const config = loadConfig(opts.config);
+
+      // Show what's in the pre-computed cache
+      const cacheFile = join(SCP_DIR, "mcp-config.json");
+      const realClaudeFile = join(SCP_DIR, "real-claude-path");
+      const wrapperPath = join(BIN_DIR, "claude");
+
+      console.log("Wrapper status:");
+      console.log(`  wrapper:      ${existsSync(wrapperPath) ? wrapperPath : "(not installed)"}`);
+      console.log(`  real claude:  ${existsSync(realClaudeFile) ? readFileSync(realClaudeFile, "utf-8").trim() : "(not set)"}`);
+      console.log(`  mcp cache:    ${existsSync(cacheFile) ? cacheFile : "(not generated)"}`);
+      console.log();
+
+      console.log("Configured MCP servers:");
+      for (const [name, server] of Object.entries(config.mcpServers)) {
+        const envVars = server.env ? ` env: ${Object.keys(server.env).join(", ")}` : "";
+        console.log(`  ${name}: ${server.command} ${server.args.join(" ")}${envVars}`);
+      }
+      console.log();
+
+      console.log("Profiles:");
+      for (const [name, profile] of Object.entries(config.profiles)) {
+        const servers = profile.servers.length > 0 ? profile.servers.join(", ") : "(none)";
+        const model = profile.model ?? "(inherited)";
+        const isolated = profile.isolateMcp ? " (isolated)" : " (inherits parent MCPs)";
+        console.log(`  ${name}: ${profile.description}`);
+        console.log(`    servers: ${servers}${profile.servers.length > 0 ? isolated : ""}  model: ${model}`);
+      }
+      console.log();
+
+      if (existsSync(cacheFile)) {
+        console.log("Resolved MCP config (injected on claude -p calls):");
+        const raw = readFileSync(cacheFile, "utf-8");
+        console.log(JSON.stringify(JSON.parse(raw), null, 2));
+      }
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);

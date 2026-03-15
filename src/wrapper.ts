@@ -11,6 +11,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { parseArgs, resolveEnvVarsInJson } from "./argv.js";
 
 const SCP_DIR = join(homedir(), ".scp");
 const BIN_DIR = join(SCP_DIR, "bin");
@@ -46,84 +47,6 @@ function findRealClaude(): string {
   }
 }
 
-// --- Argv parsing ---
-
-/** Known claude CLI flags that consume the next arg as a value. */
-const VALUE_FLAGS = new Set([
-  "-p",
-  "--print",
-  "--model",
-  "--agent",
-  "--effort",
-  "--mcp-config",
-  "--system-prompt",
-  "--permission-mode",
-  "--max-budget-usd",
-  "--name",
-  "-n",
-  "-r",
-  "--resume",
-  "--session-id",
-  "--plugin-dir",
-  "--from-pr",
-]);
-
-interface ParsedArgs {
-  isSubagent: boolean;
-  hasMcpConfig: boolean;
-}
-
-function parseArgs(args: string[]): ParsedArgs {
-  let isSubagent = false;
-  let hasMcpConfig = false;
-
-  let i = 0;
-  while (i < args.length) {
-    const arg = args[i];
-
-    // Handle --flag=value form
-    if (arg.startsWith("--") && arg.includes("=")) {
-      const flag = arg.slice(0, arg.indexOf("="));
-      if (flag === "--mcp-config") hasMcpConfig = true;
-      i++;
-      continue;
-    }
-
-    // Check for -p/--print as a flag (not as a value to another flag)
-    if (arg === "-p" || arg === "--print") {
-      isSubagent = true;
-    }
-    if (arg === "--mcp-config") {
-      hasMcpConfig = true;
-    }
-
-    // If this flag takes a value, skip the next arg
-    if (VALUE_FLAGS.has(arg) && i + 1 < args.length) {
-      i += 2;
-      continue;
-    }
-
-    i++;
-  }
-
-  return { isSubagent, hasMcpConfig };
-}
-
-// --- Env var resolution (runtime, no secrets on disk) ---
-
-function resolveEnvVars(json: string): string {
-  return json.replace(/\$\{(\w+)\}/g, (match, name) => {
-    const val = process.env[name];
-    if (val === undefined) {
-      process.stderr.write(
-        `scp: warning: env var ${name} not set in MCP config\n`
-      );
-      return match; // leave placeholder — MCP server will fail with a clear error
-    }
-    return val;
-  });
-}
-
 // --- Main ---
 
 const realClaude = findRealClaude();
@@ -136,7 +59,7 @@ if (isSubagent && !hasMcpConfig && existsSync(MCP_CONFIG_FILE)) {
     if (raw) {
       // Validate JSON is parseable before injecting
       JSON.parse(raw);
-      const resolved = resolveEnvVars(raw);
+      const resolved = resolveEnvVarsInJson(raw);
       args.push("--mcp-config", resolved);
     }
   } catch (err) {
