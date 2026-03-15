@@ -558,6 +558,7 @@ describe("buildInjectedArgs()", () => {
     profiles: {
       isolated: { servers: ["alpha"], isolateMcp: true },
       shared: { servers: ["alpha"] },
+      customPrompt: { servers: ["alpha"], systemPrompt: "Custom instructions here" },
       empty: { servers: [] },
     },
   };
@@ -594,6 +595,19 @@ describe("buildInjectedArgs()", () => {
     assert.ok(idx !== -1);
     assert.ok(args[idx + 1].includes("mcp__alpha__*"));
     assert.ok(args[idx + 1].includes("mcp__beta__*"));
+  });
+
+  it("injects default system prompt when profile has no custom one", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, "shared");
+    assert.ok(args.includes("--system-prompt"));
+    const idx = args.indexOf("--system-prompt");
+    assert.ok(args[idx + 1].includes("MCP tools"));
+  });
+
+  it("uses custom system prompt when profile defines one", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, "customPrompt");
+    const idx = args.indexOf("--system-prompt");
+    assert.equal(args[idx + 1], "Custom instructions here");
   });
 
   it("does not add --allowedTools when profile has no servers", () => {

@@ -26,7 +26,7 @@ const MCP_CONFIG_FILE = join(SUB_MCP_DIR, "mcp-config.json");
 
 export interface CachedConfig {
   mcpServers: Record<string, { command: string; args: string[]; env?: Record<string, string> }>;
-  profiles: Record<string, { servers: string[]; isolateMcp?: boolean }>;
+  profiles: Record<string, { servers: string[]; isolateMcp?: boolean; systemPrompt?: string }>;
   defaults?: { profile?: string };
 }
 
@@ -105,6 +105,12 @@ export function buildInjectedArgs(
   if (profileName && config.profiles[profileName]?.isolateMcp) {
     newArgs.push("--strict-mcp-config");
   }
+
+  // Nudge the subagent to prefer its MCP tools over built-in alternatives.
+  // Users can override with their own --system-prompt in the parent call.
+  const profilePrompt = profileName && config.profiles[profileName]?.systemPrompt;
+  const defaultPrompt = "You have MCP tools available. Always prefer MCP tools over built-in tools like WebFetch or WebSearch when they can accomplish the task.";
+  newArgs.push("--system-prompt", profilePrompt ?? defaultPrompt);
 
   // Pre-approve injected MCP tools so subagents don't hit permission prompts
   // (claude -p runs non-interactively and can't approve tools)

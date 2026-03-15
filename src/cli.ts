@@ -43,7 +43,7 @@ function buildCache(config: SubMcpConfig): object {
     profiles: Object.fromEntries(
       Object.entries(config.profiles).map(([name, p]) => [
         name,
-        { servers: p.servers, isolateMcp: p.isolateMcp },
+        { servers: p.servers, isolateMcp: p.isolateMcp, systemPrompt: p.systemPrompt },
       ])
     ),
     defaults: config.defaults,

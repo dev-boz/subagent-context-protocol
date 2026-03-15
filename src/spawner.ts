@@ -68,9 +68,8 @@ export async function query(
   if (maxBudget) {
     args.push("--max-budget-usd", maxBudget.toString());
   }
-  if (profile.systemPrompt) {
-    args.push("--system-prompt", profile.systemPrompt);
-  }
+  const defaultPrompt = "You have MCP tools available. Always prefer MCP tools over built-in tools like WebFetch or WebSearch when they can accomplish the task.";
+  args.push("--system-prompt", profile.systemPrompt ?? defaultPrompt);
 
   const claudePath = getRealClaudePath();
   const startTime = Date.now();
