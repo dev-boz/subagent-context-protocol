@@ -553,6 +553,7 @@ describe("buildInjectedArgs()", () => {
   const config: CachedConfig = {
     mcpServers: {
       alpha: { command: "node", args: ["a.js"] },
+      beta: { command: "node", args: ["b.js"] },
     },
     profiles: {
       isolated: { servers: ["alpha"], isolateMcp: true },
@@ -578,6 +579,26 @@ describe("buildInjectedArgs()", () => {
   it("does not add --strict-mcp-config when isolateMcp is false/unset", () => {
     const args = buildInjectedArgs(["-p", "hello"], config, "shared");
     assert.ok(!args.includes("--strict-mcp-config"));
+  });
+
+  it("adds --allowedTools to pre-approve injected MCP tools", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, "shared");
+    assert.ok(args.includes("--allowedTools"));
+    const idx = args.indexOf("--allowedTools");
+    assert.equal(args[idx + 1], "mcp__alpha__*");
+  });
+
+  it("adds --allowedTools for all servers when no profile specified", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, undefined);
+    const idx = args.indexOf("--allowedTools");
+    assert.ok(idx !== -1);
+    assert.ok(args[idx + 1].includes("mcp__alpha__*"));
+    assert.ok(args[idx + 1].includes("mcp__beta__*"));
+  });
+
+  it("does not add --allowedTools when profile has no servers", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, "empty");
+    assert.ok(!args.includes("--allowedTools"));
   });
 
   it("returns copy of args when profile has no servers", () => {

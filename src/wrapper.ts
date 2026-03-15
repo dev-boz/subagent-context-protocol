@@ -106,6 +106,16 @@ export function buildInjectedArgs(
     newArgs.push("--strict-mcp-config");
   }
 
+  // Pre-approve injected MCP tools so subagents don't hit permission prompts
+  // (claude -p runs non-interactively and can't approve tools)
+  const serverNames = profileName && config.profiles[profileName]
+    ? config.profiles[profileName].servers
+    : Object.keys(config.mcpServers);
+  if (serverNames.length > 0) {
+    const patterns = serverNames.map(name => `mcp__${name}__*`).join(",");
+    newArgs.push("--allowedTools", patterns);
+  }
+
   return newArgs;
 }
 

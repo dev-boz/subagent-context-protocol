@@ -56,6 +56,9 @@ export async function query(
     if (profile.isolateMcp) {
       args.push("--strict-mcp-config");
     }
+    // Pre-approve injected MCP tools for non-interactive execution
+    const patterns = profile.servers.map(name => `mcp__${name}__*`).join(",");
+    args.push("--allowedTools", patterns);
   }
 
   // Optional overrides — only when explicitly set in profile or CLI
