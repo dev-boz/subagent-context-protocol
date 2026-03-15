@@ -1,13 +1,16 @@
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import yaml from "js-yaml";
-import type { ScpConfig, McpServerConfig } from "./types.js";
+import type { SubMcpConfig, McpServerConfig } from "./types.js";
+
+const SUB_MCP_DIR = join(homedir(), ".sub-mcp");
 
 const DEFAULT_CONFIG_PATHS = [
   "profiles.yml",
   "profiles.yaml",
-  "scp.yml",
-  "scp.yaml",
+  "sub-mcp.yml",
+  "sub-mcp.yaml",
 ];
 
 export function resolveEnvVars(
@@ -26,17 +29,28 @@ export function resolveEnvVars(
   return resolved;
 }
 
-export function loadConfig(configPath?: string): ScpConfig {
+export function loadConfig(configPath?: string): SubMcpConfig {
   let filePath: string | undefined;
 
   if (configPath) {
     filePath = resolve(configPath);
   } else {
+    // Search CWD first
     for (const p of DEFAULT_CONFIG_PATHS) {
       const candidate = resolve(p);
       if (existsSync(candidate)) {
         filePath = candidate;
         break;
+      }
+    }
+    // Fall back to ~/.sub-mcp/
+    if (!filePath) {
+      for (const p of DEFAULT_CONFIG_PATHS) {
+        const candidate = join(SUB_MCP_DIR, p);
+        if (existsSync(candidate)) {
+          filePath = candidate;
+          break;
+        }
       }
     }
   }
@@ -48,7 +62,7 @@ export function loadConfig(configPath?: string): ScpConfig {
   }
 
   const raw = readFileSync(filePath, "utf-8");
-  const config = yaml.load(raw) as ScpConfig;
+  const config = yaml.load(raw) as SubMcpConfig;
 
   // Runtime type validation — yaml.load returns unknown, the `as` cast is not safe
   if (!config || typeof config !== "object") {
@@ -86,13 +100,13 @@ export function loadConfig(configPath?: string): ScpConfig {
 
   // Env vars are NOT resolved here — they stay as ${VAR} placeholders.
   // Resolution happens at runtime in the wrapper/spawner, so secrets
-  // never get persisted to ~/.scp/mcp-config.json.
+  // never get persisted to ~/.sub-mcp/mcp-config.json.
 
   return config;
 }
 
 /** Resolve env vars in a config (for runtime use in spawner, not for persistence). */
-export function resolveConfigEnv(config: ScpConfig): ScpConfig {
+export function resolveConfigEnv(config: SubMcpConfig): SubMcpConfig {
   const resolved = structuredClone(config);
   for (const server of Object.values(resolved.mcpServers)) {
     if (server.env) {
@@ -103,7 +117,7 @@ export function resolveConfigEnv(config: ScpConfig): ScpConfig {
 }
 
 export function buildMcpConfigJson(
-  config: ScpConfig,
+  config: SubMcpConfig,
   profileName: string
 ): string {
   const profile = config.profiles[profileName];

@@ -13,7 +13,7 @@ export interface ProfileConfig {
   systemPrompt?: string;
 }
 
-export interface ScpConfig {
+export interface SubMcpConfig {
   mcpServers: Record<string, McpServerConfig>;
   profiles: Record<string, ProfileConfig>;
   defaults?: {

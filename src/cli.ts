@@ -12,18 +12,18 @@ import {
   rmSync,
   readFileSync,
 } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { query } from "./spawner.js";
-import type { ScpConfig } from "./types.js";
+import type { SubMcpConfig } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SCP_DIR = join(homedir(), ".scp");
-const BIN_DIR = join(SCP_DIR, "bin");
+const SUB_MCP_DIR = join(homedir(), ".sub-mcp");
+const BIN_DIR = join(SUB_MCP_DIR, "bin");
 
 /** Write to a temp file then rename — atomic on POSIX, safe for concurrent reads. */
 function atomicWrite(path: string, content: string, mode = 0o644): void {
@@ -36,8 +36,8 @@ function atomicWrite(path: string, content: string, mode = 0o644): void {
   }
 }
 
-/** Build the cache object that gets written to ~/.scp/mcp-config.json. */
-function buildCache(config: ScpConfig): object {
+/** Build the cache object that gets written to ~/.sub-mcp/mcp-config.json. */
+function buildCache(config: SubMcpConfig): object {
   return {
     mcpServers: config.mcpServers,
     profiles: Object.fromEntries(
@@ -50,11 +50,21 @@ function buildCache(config: ScpConfig): object {
   };
 }
 
+/** Find the config source file path (for copying to ~/.sub-mcp/). */
+function findConfigSourcePath(explicitPath?: string): string | undefined {
+  if (explicitPath) return resolve(explicitPath);
+  for (const p of ["profiles.yml", "profiles.yaml", "sub-mcp.yml", "sub-mcp.yaml"]) {
+    const candidate = resolve(p);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
 const program = new Command();
 
 program
-  .name("scp")
-  .description("subagent-context-protocol — zero-overhead MCP proxy for AI coding agents")
+  .name("sub-mcp")
+  .description("sub-mcp — zero-overhead MCP proxy for AI coding agents")
   .version("0.1.0");
 
 program
@@ -114,14 +124,14 @@ program
     try {
       const config = loadConfig(opts.config);
 
-      // Find real claude — skip ~/.scp/bin to avoid finding our own wrapper
+      // Find real claude — skip ~/.sub-mcp/bin to avoid finding our own wrapper
       const pathDirs = (process.env.PATH ?? "")
         .split(":")
         .filter((d) => d !== BIN_DIR);
-      const envWithoutScp = { ...process.env, PATH: pathDirs.join(":") };
+      const envWithoutSubMcp = { ...process.env, PATH: pathDirs.join(":") };
       const realClaude = execSync("which claude", {
         encoding: "utf-8",
-        env: envWithoutScp,
+        env: envWithoutSubMcp,
       }).trim();
 
       if (!realClaude) {
@@ -133,14 +143,20 @@ program
       mkdirSync(BIN_DIR, { recursive: true });
 
       // Save real claude path (atomic)
-      atomicWrite(join(SCP_DIR, "real-claude-path"), realClaude);
+      atomicWrite(join(SUB_MCP_DIR, "real-claude-path"), realClaude);
 
       // Pre-compute MCP config cache — includes profiles and defaults so the
-      // wrapper can filter by SCP_PROFILE. Env vars kept as ${VAR} placeholders,
+      // wrapper can filter by SUB_MCP_PROFILE. Env vars kept as ${VAR} placeholders,
       // resolved at runtime. No secrets on disk.
-      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(buildCache(config)), 0o600);
+      atomicWrite(join(SUB_MCP_DIR, "mcp-config.json"), JSON.stringify(buildCache(config)), 0o600);
 
-      // Install wrapper + argv helper to ~/.scp/bin/
+      // Copy profiles.yml to ~/.sub-mcp/ so `sub-mcp refresh` works from any directory
+      const configSource = findConfigSourcePath(opts.config);
+      if (configSource) {
+        copyFileSync(configSource, join(SUB_MCP_DIR, "profiles.yml"));
+      }
+
+      // Install wrapper + argv helper to ~/.sub-mcp/bin/
       const wrapperDst = join(BIN_DIR, "claude");
       copyFileSync(join(__dirname, "wrapper.js"), wrapperDst);
       chmodSync(wrapperDst, 0o755);
@@ -153,7 +169,7 @@ program
       // Check PATH
       if (!process.env.PATH?.split(":").includes(BIN_DIR)) {
         console.log(
-          `\nAdd to your shell profile:\n  export PATH="$HOME/.scp/bin:$PATH"\n`
+          `\nAdd to your shell profile:\n  export PATH="$HOME/.sub-mcp/bin:$PATH"\n`
         );
       } else {
         console.log("\nReady. Subagents will now have MCP access.");
@@ -172,8 +188,8 @@ program
     const files = [
       join(BIN_DIR, "claude"),
       join(BIN_DIR, "argv.js"),
-      join(SCP_DIR, "real-claude-path"),
-      join(SCP_DIR, "mcp-config.json"),
+      join(SUB_MCP_DIR, "real-claude-path"),
+      join(SUB_MCP_DIR, "mcp-config.json"),
     ];
     for (const f of files) {
       try {
@@ -195,7 +211,7 @@ program
   .action((opts: Record<string, string | undefined>) => {
     try {
       const config = loadConfig(opts.config);
-      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(buildCache(config)), 0o600);
+      atomicWrite(join(SUB_MCP_DIR, "mcp-config.json"), JSON.stringify(buildCache(config)), 0o600);
       console.log(
         `Updated MCP config: ${Object.keys(config.mcpServers).join(", ")}`
       );
@@ -213,8 +229,8 @@ program
     try {
       const config = loadConfig(opts.config);
 
-      const cacheFile = join(SCP_DIR, "mcp-config.json");
-      const realClaudeFile = join(SCP_DIR, "real-claude-path");
+      const cacheFile = join(SUB_MCP_DIR, "mcp-config.json");
+      const realClaudeFile = join(SUB_MCP_DIR, "real-claude-path");
       const wrapperPath = join(BIN_DIR, "claude");
 
       console.log("Wrapper status:");

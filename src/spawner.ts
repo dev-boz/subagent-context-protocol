@@ -1,8 +1,27 @@
 import { spawn } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { buildMcpConfigJson, resolveConfigEnv } from "./config.js";
-import type { ScpConfig, ClaudeResult, QueryResult } from "./types.js";
+import type { SubMcpConfig, ClaudeResult, QueryResult } from "./types.js";
 
+const SUB_MCP_DIR = join(homedir(), ".sub-mcp");
 const DEFAULT_TIMEOUT_MS = 120_000;
+
+/**
+ * Resolve the real claude binary path. Reads from ~/.sub-mcp/real-claude-path
+ * to avoid hitting the wrapper (which would cause a recursion loop if
+ * ~/.sub-mcp/bin is in PATH).
+ * Falls back to bare "claude" if the saved path is unavailable.
+ */
+function getRealClaudePath(): string {
+  const savedPathFile = join(SUB_MCP_DIR, "real-claude-path");
+  if (existsSync(savedPathFile)) {
+    const real = readFileSync(savedPathFile, "utf-8").trim();
+    if (real && existsSync(real)) return real;
+  }
+  return "claude";
+}
 
 export interface QueryOptions {
   model?: string;
@@ -10,7 +29,7 @@ export interface QueryOptions {
 }
 
 export async function query(
-  config: ScpConfig,
+  config: SubMcpConfig,
   profileName: string,
   prompt: string,
   options: QueryOptions = {}
@@ -50,10 +69,11 @@ export async function query(
     args.push("--system-prompt", profile.systemPrompt);
   }
 
+  const claudePath = getRealClaudePath();
   const startTime = Date.now();
 
   return new Promise<QueryResult>((resolve, reject) => {
-    const child = spawn("claude", args, {
+    const child = spawn(claudePath, args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env },
     });

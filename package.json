@@ -1,10 +1,10 @@
 {
-  "name": "subagent-context-protocol",
+  "name": "sub-mcp",
   "version": "0.1.0",
   "description": "Zero-overhead MCP proxy for AI coding agents via subprocess routing",
   "type": "module",
   "bin": {
-    "scp": "./dist/cli.js"
+    "sub-mcp": "./dist/cli.js"
   },
   "main": "./dist/spawner.js",
   "files": [
@@ -16,6 +16,13 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "tsc && node --test dist/test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/sub-mcp"
   },
   "dependencies": {
     "commander": "^13.1.0",

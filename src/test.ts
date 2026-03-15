@@ -6,6 +6,12 @@ import { tmpdir } from "node:os";
 
 import { loadConfig, resolveConfigEnv, buildMcpConfigJson } from "./config.js";
 import { parseArgs, resolveEnvVarsInJson } from "./argv.js";
+import {
+  shouldInjectMcp,
+  buildInjectedArgs,
+  buildMcpJson,
+  type CachedConfig,
+} from "./wrapper.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -13,7 +19,7 @@ import { parseArgs, resolveEnvVarsInJson } from "./argv.js";
 
 /** Create a temp directory, write a file inside it, return the dir path. */
 function makeTempDir(): string {
-  return mkdtempSync(join(tmpdir(), "scp-test-"));
+  return mkdtempSync(join(tmpdir(), "sub-mcp-test-"));
 }
 
 function writeTempConfig(dir: string, name: string, content: string): string {
@@ -164,7 +170,7 @@ mcpServers:
     command: npx
     args: []
     env:
-      API_KEY: "\${SCP_TEST_API_KEY}"
+      API_KEY: "\${SUB_MCP_TEST_API_KEY}"
 
 profiles:
   p:
@@ -174,16 +180,16 @@ profiles:
       writeTempConfig(dir, "profiles.yml", yml);
       const config = loadConfig(join(dir, "profiles.yml"));
 
-      const saved = process.env["SCP_TEST_API_KEY"];
-      process.env["SCP_TEST_API_KEY"] = "supersecret";
+      const saved = process.env["SUB_MCP_TEST_API_KEY"];
+      process.env["SUB_MCP_TEST_API_KEY"] = "supersecret";
       try {
         const resolved = resolveConfigEnv(config);
         assert.equal(resolved.mcpServers["s"].env?.["API_KEY"], "supersecret");
       } finally {
         if (saved === undefined) {
-          delete process.env["SCP_TEST_API_KEY"];
+          delete process.env["SUB_MCP_TEST_API_KEY"];
         } else {
-          process.env["SCP_TEST_API_KEY"] = saved;
+          process.env["SUB_MCP_TEST_API_KEY"] = saved;
         }
       }
     } finally {
@@ -200,7 +206,7 @@ mcpServers:
     command: npx
     args: []
     env:
-      TOKEN: "\${SCP_TEST_DEFINITELY_MISSING_VAR_XYZ}"
+      TOKEN: "\${SUB_MCP_TEST_DEFINITELY_MISSING_VAR_XYZ}"
 
 profiles:
   p:
@@ -210,11 +216,11 @@ profiles:
       writeTempConfig(dir, "profiles.yml", yml);
       const config = loadConfig(join(dir, "profiles.yml"));
 
-      delete process.env["SCP_TEST_DEFINITELY_MISSING_VAR_XYZ"];
+      delete process.env["SUB_MCP_TEST_DEFINITELY_MISSING_VAR_XYZ"];
 
       assert.throws(
         () => resolveConfigEnv(config),
-        /Environment variable SCP_TEST_DEFINITELY_MISSING_VAR_XYZ is not set/
+        /Environment variable SUB_MCP_TEST_DEFINITELY_MISSING_VAR_XYZ is not set/
       );
     } finally {
       rmSync(dir, { recursive: true });
@@ -479,5 +485,106 @@ defaults:
     } finally {
       rmSync(dir, { recursive: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wrapper function tests (shouldInjectMcp, buildMcpJson, buildInjectedArgs)
+// ---------------------------------------------------------------------------
+
+describe("shouldInjectMcp()", () => {
+  it("returns true when subagent mode and no existing mcp-config", () => {
+    assert.equal(shouldInjectMcp(true, false), true);
+  });
+
+  it("returns false when not in subagent mode", () => {
+    assert.equal(shouldInjectMcp(false, false), false);
+  });
+
+  it("returns false when mcp-config already present", () => {
+    assert.equal(shouldInjectMcp(true, true), false);
+  });
+});
+
+describe("buildMcpJson()", () => {
+  const config: CachedConfig = {
+    mcpServers: {
+      alpha: { command: "node", args: ["a.js"] },
+      beta: { command: "node", args: ["b.js"] },
+    },
+    profiles: {
+      onlyAlpha: { servers: ["alpha"], isolateMcp: true },
+      all: { servers: ["alpha", "beta"] },
+      empty: { servers: [] },
+    },
+  };
+
+  it("filters servers by profile", () => {
+    const json = buildMcpJson(config, "onlyAlpha");
+    assert.ok(json);
+    const parsed = JSON.parse(json) as { mcpServers: Record<string, unknown> };
+    assert.ok(parsed.mcpServers["alpha"]);
+    assert.equal(parsed.mcpServers["beta"], undefined);
+  });
+
+  it("returns all servers when no profile specified", () => {
+    const json = buildMcpJson(config, undefined);
+    assert.ok(json);
+    const parsed = JSON.parse(json) as { mcpServers: Record<string, unknown> };
+    assert.ok(parsed.mcpServers["alpha"]);
+    assert.ok(parsed.mcpServers["beta"]);
+  });
+
+  it("returns null for empty server list", () => {
+    const json = buildMcpJson(config, "empty");
+    assert.equal(json, null);
+  });
+
+  it("falls back to all servers for unknown profile", () => {
+    const json = buildMcpJson(config, "nonexistent");
+    assert.ok(json);
+    const parsed = JSON.parse(json) as { mcpServers: Record<string, unknown> };
+    assert.ok(parsed.mcpServers["alpha"]);
+    assert.ok(parsed.mcpServers["beta"]);
+  });
+});
+
+describe("buildInjectedArgs()", () => {
+  const config: CachedConfig = {
+    mcpServers: {
+      alpha: { command: "node", args: ["a.js"] },
+    },
+    profiles: {
+      isolated: { servers: ["alpha"], isolateMcp: true },
+      shared: { servers: ["alpha"] },
+      empty: { servers: [] },
+    },
+  };
+
+  it("appends --mcp-config with resolved JSON", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, "shared");
+    assert.ok(args.includes("--mcp-config"));
+    const mcpIdx = args.indexOf("--mcp-config");
+    const mcpJson = args[mcpIdx + 1];
+    const parsed = JSON.parse(mcpJson) as { mcpServers: Record<string, unknown> };
+    assert.ok(parsed.mcpServers["alpha"]);
+  });
+
+  it("adds --strict-mcp-config when isolateMcp is true", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, "isolated");
+    assert.ok(args.includes("--strict-mcp-config"));
+  });
+
+  it("does not add --strict-mcp-config when isolateMcp is false/unset", () => {
+    const args = buildInjectedArgs(["-p", "hello"], config, "shared");
+    assert.ok(!args.includes("--strict-mcp-config"));
+  });
+
+  it("returns copy of args when profile has no servers", () => {
+    const original = ["-p", "hello"];
+    const args = buildInjectedArgs(original, config, "empty");
+    assert.deepStrictEqual(args, ["-p", "hello"]);
+    // Verify it's a copy, not the same array
+    assert.notEqual(args, original);
   });
 });
