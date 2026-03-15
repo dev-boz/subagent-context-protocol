@@ -1,0 +1,23 @@
+{
+  "name": "subagent-context-protocol",
+  "version": "0.1.0",
+  "description": "Zero-overhead MCP proxy for AI coding agents via subprocess routing",
+  "type": "module",
+  "bin": {
+    "scp": "./dist/cli.js"
+  },
+  "main": "./dist/spawner.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "@types/js-yaml": "^4.0.9"
+  }
+}

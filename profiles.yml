@@ -1,0 +1,17 @@
+mcpServers:
+  context7:
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+
+profiles:
+  docs:
+    description: "Documentation lookup via Context7"
+    servers: [context7]
+    model: haiku
+    isolateMcp: true
+  clean:
+    description: "No MCPs - pure coding assistant"
+    servers: []
+
+defaults:
+  maxBudget: 1.0

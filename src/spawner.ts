@@ -1,0 +1,115 @@
+import { spawn } from "node:child_process";
+import { buildMcpConfigJson, resolveConfigEnv } from "./config.js";
+import type { ScpConfig, ClaudeResult, QueryResult } from "./types.js";
+
+const DEFAULT_TIMEOUT_MS = 120_000;
+
+export interface QueryOptions {
+  model?: string;
+  timeout?: number;
+}
+
+export async function query(
+  config: ScpConfig,
+  profileName: string,
+  prompt: string,
+  options: QueryOptions = {}
+): Promise<QueryResult> {
+  const profile = config.profiles[profileName];
+  if (!profile) {
+    throw new Error(`Unknown profile: "${profileName}"`);
+  }
+
+  const model = options.model ?? profile.model;
+  const maxBudget = profile.maxBudget ?? config.defaults?.maxBudget;
+  const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
+
+  // Minimal flags — everything else inherits from parent agent
+  const args = ["-p", prompt, "--output-format", "json"];
+
+  // Add MCP config if the profile has servers — resolve env vars at runtime
+  if (profile.servers.length > 0) {
+    const resolved = resolveConfigEnv(config);
+    const mcpJson = buildMcpConfigJson(resolved, profileName);
+    args.push("--mcp-config", mcpJson);
+    // isolateMcp: only profile MCPs. Default: inherit parent MCPs + add profile ones
+    if (profile.isolateMcp) {
+      args.push("--strict-mcp-config");
+    }
+  }
+
+  // Optional overrides — only when explicitly set in profile or CLI
+  if (model) {
+    args.push("--model", model);
+  }
+  if (maxBudget) {
+    args.push("--max-budget-usd", maxBudget.toString());
+  }
+  if (profile.systemPrompt) {
+    args.push("--system-prompt", profile.systemPrompt);
+  }
+
+  const startTime = Date.now();
+
+  return new Promise<QueryResult>((resolve, reject) => {
+    const child = spawn("claude", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(
+        new Error(
+          `Query timed out after ${timeout}ms (profile: ${profileName})`
+        )
+      );
+    }, timeout);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+
+      if (code !== 0) {
+        reject(
+          new Error(`claude exited with code ${code}: ${stderr || stdout}`)
+        );
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stdout) as ClaudeResult;
+        const durationMs = Date.now() - startTime;
+
+        if (parsed.is_error) {
+          reject(new Error(`Claude returned error: ${parsed.result}`));
+          return;
+        }
+
+        resolve({
+          text: parsed.result,
+          cost: parsed.total_cost_usd,
+          durationMs,
+          model: model ?? "inherited",
+          profile: profileName,
+        });
+      } catch {
+        reject(new Error(`Failed to parse claude output: ${stdout}`));
+      }
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(new Error(`Failed to spawn claude: ${err.message}`));
+    });
+  });
+}
