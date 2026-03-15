@@ -103,14 +103,19 @@ if (!bypass) {
       }
     } catch (err) {
       process.stderr.write(
-        `scp: warning: bad mcp-config.json, skipping injection: ${(err as Error).message}\n`
+        `scp: warning: skipping MCP injection: ${(err as Error).message}\n`
       );
     }
   }
 }
 
 const child = spawn(realClaude, args, { stdio: "inherit" });
-child.on("close", (code) => process.exit(code ?? 1));
+child.on("close", (code, signal) => {
+  if (signal) {
+    process.stderr.write(`scp: claude terminated by signal ${signal}\n`);
+  }
+  process.exit(code ?? 1);
+});
 child.on("error", (err) => {
   process.stderr.write(`scp: failed to run claude: ${err.message}\n`);
   process.exit(1);

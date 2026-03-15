@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { query } from "./spawner.js";
+import type { ScpConfig } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -27,8 +28,26 @@ const BIN_DIR = join(SCP_DIR, "bin");
 /** Write to a temp file then rename — atomic on POSIX, safe for concurrent reads. */
 function atomicWrite(path: string, content: string, mode = 0o644): void {
   const tmp = `${path}.tmp.${process.pid}`;
-  writeFileSync(tmp, content, { mode });
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, content, { mode });
+    renameSync(tmp, path);
+  } finally {
+    try { rmSync(tmp, { force: true }); } catch { /* best-effort cleanup */ }
+  }
+}
+
+/** Build the cache object that gets written to ~/.scp/mcp-config.json. */
+function buildCache(config: ScpConfig): object {
+  return {
+    mcpServers: config.mcpServers,
+    profiles: Object.fromEntries(
+      Object.entries(config.profiles).map(([name, p]) => [
+        name,
+        { servers: p.servers, isolateMcp: p.isolateMcp },
+      ])
+    ),
+    defaults: config.defaults,
+  };
 }
 
 const program = new Command();
@@ -116,20 +135,10 @@ program
       // Save real claude path (atomic)
       atomicWrite(join(SCP_DIR, "real-claude-path"), realClaude);
 
-      // Pre-compute MCP config JSON — includes profiles and defaults so the
+      // Pre-compute MCP config cache — includes profiles and defaults so the
       // wrapper can filter by SCP_PROFILE. Env vars kept as ${VAR} placeholders,
       // resolved at runtime. No secrets on disk.
-      const cache = {
-        mcpServers: config.mcpServers,
-        profiles: Object.fromEntries(
-          Object.entries(config.profiles).map(([name, p]) => [
-            name,
-            { servers: p.servers, isolateMcp: p.isolateMcp },
-          ])
-        ),
-        defaults: config.defaults,
-      };
-      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(cache), 0o600);
+      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(buildCache(config)), 0o600);
 
       // Install wrapper + argv helper to ~/.scp/bin/
       const wrapperDst = join(BIN_DIR, "claude");
@@ -159,12 +168,22 @@ program
   .command("uninstall")
   .description("Remove the claude wrapper")
   .action(() => {
-    for (const f of [join(BIN_DIR, "claude"), join(BIN_DIR, "argv.js")]) {
-      if (existsSync(f)) rmSync(f);
+    const errors: string[] = [];
+    const files = [
+      join(BIN_DIR, "claude"),
+      join(BIN_DIR, "argv.js"),
+      join(SCP_DIR, "real-claude-path"),
+      join(SCP_DIR, "mcp-config.json"),
+    ];
+    for (const f of files) {
+      try {
+        if (existsSync(f)) rmSync(f);
+      } catch (err) {
+        errors.push(`Failed to remove ${f}: ${(err as Error).message}`);
+      }
     }
-    for (const f of ["real-claude-path", "mcp-config.json"]) {
-      const p = join(SCP_DIR, f);
-      if (existsSync(p)) rmSync(p);
+    if (errors.length > 0) {
+      console.error(errors.join("\n"));
     }
     console.log("Uninstalled. Subagents will use claude directly.");
   });
@@ -176,17 +195,7 @@ program
   .action((opts: Record<string, string | undefined>) => {
     try {
       const config = loadConfig(opts.config);
-      const cache = {
-        mcpServers: config.mcpServers,
-        profiles: Object.fromEntries(
-          Object.entries(config.profiles).map(([name, p]) => [
-            name,
-            { servers: p.servers, isolateMcp: p.isolateMcp },
-          ])
-        ),
-        defaults: config.defaults,
-      };
-      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(cache), 0o600);
+      atomicWrite(join(SCP_DIR, "mcp-config.json"), JSON.stringify(buildCache(config)), 0o600);
       console.log(
         `Updated MCP config: ${Object.keys(config.mcpServers).join(", ")}`
       );
@@ -204,7 +213,6 @@ program
     try {
       const config = loadConfig(opts.config);
 
-      // Show what's in the pre-computed cache
       const cacheFile = join(SCP_DIR, "mcp-config.json");
       const realClaudeFile = join(SCP_DIR, "real-claude-path");
       const wrapperPath = join(BIN_DIR, "claude");

@@ -84,6 +84,51 @@ profiles:
     }
   });
 
+  it("throws on profile with non-array servers", () => {
+    const dir = makeTempDir();
+    try {
+      const yml = `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  broken:
+    description: "servers is a string"
+    servers: "s"
+`;
+      writeTempConfig(dir, "profiles.yml", yml);
+      assert.throws(
+        () => loadConfig(join(dir, "profiles.yml")),
+        /servers must be an array/
+      );
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("throws on profiles defined as a non-object", () => {
+    const dir = makeTempDir();
+    try {
+      const yml = `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles: "not an object"
+`;
+      writeTempConfig(dir, "profiles.yml", yml);
+      assert.throws(
+        () => loadConfig(join(dir, "profiles.yml")),
+        /profiles as an object/
+      );
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
   it("does NOT resolve env vars — they stay as ${VAR} placeholders", () => {
     const dir = makeTempDir();
     try {
@@ -292,17 +337,27 @@ describe("resolveEnvVarsInJson()", () => {
     assert.equal(result, '{"key":"bar"}');
   });
 
-  it("leaves ${MISSING} as-is when not set", () => {
-    const result = resolveEnvVarsInJson('{"key":"${MISSING}"}', {});
-    assert.equal(result, '{"key":"${MISSING}"}');
+  it("throws on missing env vars", () => {
+    assert.throws(
+      () => resolveEnvVarsInJson('{"key":"${MISSING}"}', {}),
+      /Missing environment variables: MISSING/
+    );
   });
 
-  it("handles multiple vars in one string", () => {
-    const result = resolveEnvVarsInJson(
-      '{"a":"${A}","b":"${B}","c":"${MISSING}"}',
-      { A: "alpha", B: "bravo" }
+  it("reports all missing vars in one error", () => {
+    assert.throws(
+      () => resolveEnvVarsInJson('{"a":"${X}","b":"${Y}"}', {}),
+      /Missing environment variables: X, Y/
     );
-    assert.equal(result, '{"a":"alpha","b":"bravo","c":"${MISSING}"}');
+  });
+
+  it("JSON-escapes values with special characters", () => {
+    const result = resolveEnvVarsInJson('{"key":"${TOKEN}"}', {
+      TOKEN: 'has"quotes\\and\nnewlines',
+    });
+    // Must be valid JSON
+    const parsed = JSON.parse(result) as { key: string };
+    assert.equal(parsed.key, 'has"quotes\\and\nnewlines');
   });
 
   it("passes through strings with no placeholders unchanged", () => {

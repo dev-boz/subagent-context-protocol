@@ -24,8 +24,9 @@ export async function query(
   const maxBudget = profile.maxBudget ?? config.defaults?.maxBudget;
   const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
 
-  // Minimal flags — everything else inherits from parent agent
-  const args = ["-p", prompt, "--output-format", "json"];
+  // Minimal flags — everything else inherits from parent agent.
+  // --no-session-persistence: subagent queries are stateless fire-and-forget.
+  const args = ["-p", prompt, "--output-format", "json", "--no-session-persistence"];
 
   // Add MCP config if the profile has servers — resolve env vars at runtime
   if (profile.servers.length > 0) {

@@ -50,16 +50,32 @@ export function loadConfig(configPath?: string): ScpConfig {
   const raw = readFileSync(filePath, "utf-8");
   const config = yaml.load(raw) as ScpConfig;
 
-  if (!config.mcpServers) {
-    throw new Error("Config must define mcpServers");
+  // Runtime type validation — yaml.load returns unknown, the `as` cast is not safe
+  if (!config || typeof config !== "object") {
+    throw new Error("Config file is empty or not a YAML object");
   }
-  if (!config.profiles) {
-    throw new Error("Config must define profiles");
+  if (!config.mcpServers || typeof config.mcpServers !== "object") {
+    throw new Error("Config must define mcpServers as an object");
+  }
+  if (!config.profiles || typeof config.profiles !== "object") {
+    throw new Error("Config must define profiles as an object");
   }
 
-  // Validate all profile server refs exist
   for (const [profileName, profile] of Object.entries(config.profiles)) {
+    if (!profile || typeof profile !== "object") {
+      throw new Error(`Profile "${profileName}" must be an object`);
+    }
+    if (!Array.isArray(profile.servers)) {
+      throw new Error(
+        `Profile "${profileName}": servers must be an array`
+      );
+    }
     for (const serverName of profile.servers) {
+      if (typeof serverName !== "string") {
+        throw new Error(
+          `Profile "${profileName}": each server name must be a string`
+        );
+      }
       if (!config.mcpServers[serverName]) {
         throw new Error(
           `Profile "${profileName}" references unknown server "${serverName}"`

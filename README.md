@@ -224,6 +224,28 @@ SCP_BYPASS=1 claude -p "this call skips MCP injection"
 - **MCP startup latency remains** — subagent-context-protocol eliminates token overhead, not MCP server connection time
 - **Process list exposure** — resolved env vars are visible in `ps` for the duration of the subagent call
 - **Config changes need refresh** — after editing profiles.yml, run `scp refresh`
+- **CLI name collision** — the `scp` management command shares a name with secure copy (`scp`). If this causes issues, alias it: `alias scproto="npx subagent-context-protocol"`
+
+## Example: before and after
+
+**Without subagent-context-protocol** — Context7 schema permanently in context:
+```
+$ claude
+> /context
+> MCP tools: 42.6k tokens (21.3%)  ← eating your context window every turn
+```
+
+**With subagent-context-protocol** — main agent stays clean:
+```
+$ claude
+> /context
+> MCP tools: 0k tokens  ← clean
+
+> "Use a subagent to look up the Django 5.1 migration docs"
+  └─ Agent spawns: claude -p "..."
+     └─ Wrapper injects Context7 MCP → subagent uses it → returns summary
+  Main agent context: still clean
+```
 
 ## Phase 2 (planned)
 
