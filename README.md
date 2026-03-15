@@ -51,10 +51,10 @@ export PATH="$HOME/.sub-mcp/bin:$PATH"
 1. `sub-mcp install` finds your real `claude` binary, saves its path, and installs a wrapper at `~/.sub-mcp/bin/claude`
 2. The wrapper sits earlier in PATH than the real binary
 3. On every `claude` invocation, the wrapper checks if `-p`/`--print` is in the args (subagent/non-interactive mode)
-4. If yes: injects `--mcp-config` with the appropriate MCP servers and `--allowedTools` to pre-approve them, then execs the real `claude`
+4. If yes: injects `--mcp-config`, `--allowedTools` (pre-approves MCP tools), and a `--system-prompt` nudging the subagent to prefer MCP tools over built-ins like WebFetch
 5. If no (interactive mode): pure passthrough
 
-The main agent never sees MCP schemas. Subagents discover and use MCP tools naturally.
+The main agent never sees MCP schemas. Subagents discover and use MCP tools naturally. The default system prompt can be overridden per-profile with the `systemPrompt` field in profiles.yml.
 
 ## Configuration
 
