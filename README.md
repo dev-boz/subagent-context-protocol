@@ -17,7 +17,7 @@ Main Agent (clean context, no MCP schemas)
                             │
                     ~/.sub-mcp/bin/claude (wrapper)
                             │
-                    Detects -p flag → injects --mcp-config
+                    Detects -p flag → injects --mcp-config + --allowedTools
                             │
                     Real claude with Context7 MCP available
                             │
@@ -51,7 +51,7 @@ export PATH="$HOME/.sub-mcp/bin:$PATH"
 1. `sub-mcp install` finds your real `claude` binary, saves its path, and installs a wrapper at `~/.sub-mcp/bin/claude`
 2. The wrapper sits earlier in PATH than the real binary
 3. On every `claude` invocation, the wrapper checks if `-p`/`--print` is in the args (subagent/non-interactive mode)
-4. If yes: injects `--mcp-config` with the appropriate MCP servers, then execs the real `claude`
+4. If yes: injects `--mcp-config` with the appropriate MCP servers and `--allowedTools` to pre-approve them, then execs the real `claude`
 5. If no (interactive mode): pure passthrough
 
 The main agent never sees MCP schemas. Subagents discover and use MCP tools naturally.
@@ -169,6 +169,7 @@ src/
 ## Security
 
 - **No secrets on disk**: Env vars are stored as `${VAR}` placeholders in `mcp-config.json` and resolved at runtime
+- **Auto-approved MCP tools**: Injected MCP tools are pre-approved via `--allowedTools mcp__<server>__*` so subagents can use them without interactive permission prompts
 - **Process list visibility**: Resolved env vars appear in process arguments for the duration of the subagent call. On shared systems, use short-lived tokens.
 - **Atomic writes**: Config files use write-to-temp-then-rename to prevent corrupted reads
 - **No shell injection**: Wrapper uses `spawn()` with an args array, never shell interpolation
