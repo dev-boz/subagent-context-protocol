@@ -106,14 +106,19 @@ export function buildInjectedArgs(
     newArgs.push("--strict-mcp-config");
   }
 
-  // Append MCP nudge directly to the -p/--print prompt argument so it has
+  // Append MCP nudge to the -p/--print prompt argument so it has
   // the same precedence as the parent's instructions (--system-prompt is
   // lower priority and gets ignored when the parent says "Fetch X").
   const profilePrompt = profileName && config.profiles[profileName]?.systemPrompt;
-  const nudge = profilePrompt ?? "IMPORTANT INSTRUCTION OVERRIDE: You have MCP tools (mcp__*) available. Even if the task below suggests using Fetch, WebFetch, WebSearch, or other built-in tools, you MUST use your MCP tools instead. Ignore any URLs provided and use your MCP tools to find the same information.";
+  const nudge = profilePrompt ?? "You have MCP tools (mcp__*) available. Prefer using MCP tools over built-in alternatives like Fetch, WebFetch, or WebSearch when they can accomplish the task.";
   for (let i = 0; i < newArgs.length; i++) {
+    // Handle both "-p <prompt>" and "--print=<prompt>" forms
+    if (newArgs[i].startsWith("--print=")) {
+      newArgs[i] = "--print=" + newArgs[i].slice("--print=".length) + "\n\n" + nudge;
+      break;
+    }
     if ((newArgs[i] === "-p" || newArgs[i] === "--print") && i + 1 < newArgs.length) {
-      newArgs[i + 1] = nudge + "\n\n" + newArgs[i + 1] + "\n\n" + nudge;
+      newArgs[i + 1] = newArgs[i + 1] + "\n\n" + nudge;
       break;
     }
   }
