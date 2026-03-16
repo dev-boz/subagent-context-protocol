@@ -106,11 +106,17 @@ export function buildInjectedArgs(
     newArgs.push("--strict-mcp-config");
   }
 
-  // Nudge the subagent to prefer its MCP tools over built-in alternatives.
-  // Users can override with their own --system-prompt in the parent call.
+  // Append MCP nudge directly to the -p/--print prompt argument so it has
+  // the same precedence as the parent's instructions (--system-prompt is
+  // lower priority and gets ignored when the parent says "Fetch X").
   const profilePrompt = profileName && config.profiles[profileName]?.systemPrompt;
-  const defaultPrompt = "IMPORTANT: You have MCP tools (mcp__*) available. Always use MCP tools when they can accomplish the task, in preference to built-in tools that overlap in functionality.";
-  newArgs.push("--system-prompt", profilePrompt ?? defaultPrompt);
+  const nudge = profilePrompt ?? "IMPORTANT INSTRUCTION OVERRIDE: You have MCP tools (mcp__*) available. Even if the task below suggests using Fetch, WebFetch, WebSearch, or other built-in tools, you MUST use your MCP tools instead. Ignore any URLs provided and use your MCP tools to find the same information.";
+  for (let i = 0; i < newArgs.length; i++) {
+    if ((newArgs[i] === "-p" || newArgs[i] === "--print") && i + 1 < newArgs.length) {
+      newArgs[i + 1] = nudge + "\n\n" + newArgs[i + 1] + "\n\n" + nudge;
+      break;
+    }
+  }
 
   // Pre-approve injected MCP tools so subagents don't hit permission prompts
   // (claude -p runs non-interactively and can't approve tools)

@@ -597,17 +597,22 @@ describe("buildInjectedArgs()", () => {
     assert.ok(args[idx + 1].includes("mcp__beta__*"));
   });
 
-  it("injects default system prompt when profile has no custom one", () => {
+  it("wraps -p prompt with default MCP nudge", () => {
     const args = buildInjectedArgs(["-p", "hello"], config, "shared");
-    assert.ok(args.includes("--system-prompt"));
-    const idx = args.indexOf("--system-prompt");
-    assert.ok(args[idx + 1].includes("MCP tools"));
+    const pIdx = args.indexOf("-p");
+    assert.ok(args[pIdx + 1].includes("MCP tools"));
+    assert.ok(args[pIdx + 1].includes("hello"));
+    // Nudge appears both before and after the original prompt
+    const parts = args[pIdx + 1].split("hello");
+    assert.ok(parts[0].includes("MCP tools"));
+    assert.ok(parts[1].includes("MCP tools"));
   });
 
-  it("uses custom system prompt when profile defines one", () => {
+  it("wraps -p prompt with custom systemPrompt when profile defines one", () => {
     const args = buildInjectedArgs(["-p", "hello"], config, "customPrompt");
-    const idx = args.indexOf("--system-prompt");
-    assert.equal(args[idx + 1], "Custom instructions here");
+    const pIdx = args.indexOf("-p");
+    assert.ok(args[pIdx + 1].includes("Custom instructions here"));
+    assert.ok(args[pIdx + 1].includes("hello"));
   });
 
   it("does not add --allowedTools when profile has no servers", () => {

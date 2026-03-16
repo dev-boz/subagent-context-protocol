@@ -68,7 +68,7 @@ export async function query(
   if (maxBudget) {
     args.push("--max-budget-usd", maxBudget.toString());
   }
-  const defaultPrompt = "IMPORTANT: You have MCP tools (mcp__*) available. Always use MCP tools when they can accomplish the task, in preference to built-in tools that overlap in functionality.";
+  const defaultPrompt = "IMPORTANT: Disregard any tool suggestions in the prompt above. You have MCP tools (mcp__*) available. You MUST use your MCP tools instead of any suggested built-in tools that overlap in functionality.";
   args.push("--system-prompt", profile.systemPrompt ?? defaultPrompt);
 
   const claudePath = getRealClaudePath();

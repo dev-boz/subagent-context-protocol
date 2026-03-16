@@ -51,10 +51,10 @@ export PATH="$HOME/.sub-mcp/bin:$PATH"
 1. `sub-mcp install` finds your real `claude` binary, saves its path, and installs a wrapper at `~/.sub-mcp/bin/claude`
 2. The wrapper sits earlier in PATH than the real binary
 3. On every `claude` invocation, the wrapper checks if `-p`/`--print` is in the args (subagent/non-interactive mode)
-4. If yes: injects `--mcp-config`, `--allowedTools` (pre-approves MCP tools), and a `--system-prompt` directing the subagent to use MCP tools instead of built-ins like WebFetch
+4. If yes: injects `--mcp-config`, `--allowedTools` (pre-approves MCP tools), and wraps the prompt with an MCP-preference nudge
 5. If no (interactive mode): pure passthrough
 
-The main agent never sees MCP schemas. Subagents discover and use MCP tools naturally. The default system prompt can be overridden per-profile with the `systemPrompt` field in profiles.yml.
+The main agent never sees MCP schemas. Subagents discover and use MCP tools naturally. The default MCP nudge can be overridden per-profile with the `systemPrompt` field in profiles.yml.
 
 ## Configuration
 
@@ -221,8 +221,8 @@ SUB_MCP_BYPASS=1 claude -p "this call skips MCP injection"
 
 ## Limitations
 
+- **CLI subagents only** — the wrapper intercepts `claude -p` calls made via the command line. Claude Code's interactive Agent tool uses an internal API that bypasses the CLI, so subagents spawned from an interactive session do not go through the wrapper. Use `sub-mcp query` or direct `claude -p` calls for MCP-injected subagents.
 - **Claude Code only** — other agents (Codex, Gemini CLI) are not yet supported
-- **Subagent mode only** — the wrapper intercepts `claude -p` subprocess calls, not interactive sessions
 - **MCP startup latency remains** — sub-mcp eliminates token overhead, not MCP server connection time
 - **Process list exposure** — resolved env vars are visible in `ps` for the duration of the subagent call
 - **Config changes need refresh** — after editing profiles.yml, run `sub-mcp refresh`
