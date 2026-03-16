@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -12,6 +12,11 @@ import {
   buildMcpJson,
   type CachedConfig,
 } from "./wrapper.js";
+import {
+  generateAgentFiles,
+  generateRulesFile,
+  cleanGeneratedFiles,
+} from "./cli.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -626,5 +631,284 @@ describe("buildInjectedArgs()", () => {
     assert.deepStrictEqual(args, ["-p", "hello"]);
     // Verify it's a copy, not the same array
     assert.notEqual(args, original);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent file generation tests
+// ---------------------------------------------------------------------------
+
+describe("generateAgentFiles()", () => {
+  it("creates .claude/agents/<profile>.md for each profile", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  alpha:
+    command: node
+    args: ["a.js"]
+  beta:
+    command: node
+    args: ["b.js"]
+
+profiles:
+  docs:
+    description: "Documentation lookup"
+    servers: [alpha]
+    model: haiku
+  all:
+    description: "All servers"
+    servers: [alpha, beta]
+`));
+      const files = generateAgentFiles(config, dir);
+      assert.equal(files.length, 2);
+      assert.ok(existsSync(join(dir, ".claude", "agents", "docs.md")));
+      assert.ok(existsSync(join(dir, ".claude", "agents", "all.md")));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("includes mcpServers as list with inline definitions and type: stdio", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  myserver:
+    command: npx
+    args: ["-y", "some-mcp"]
+
+profiles:
+  test:
+    description: "Test profile"
+    servers: [myserver]
+`));
+      generateAgentFiles(config, dir);
+      const content = readFileSync(join(dir, ".claude", "agents", "test.md"), "utf-8");
+      // Should have frontmatter with mcpServers as list
+      assert.ok(content.startsWith("---\n"));
+      assert.ok(content.includes("mcpServers:"));
+      assert.ok(content.includes("myserver:"));
+      assert.ok(content.includes("type: stdio"));
+      assert.ok(content.includes("command: npx"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("includes name and description in frontmatter", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  alpha:
+    command: node
+    args: ["a.js"]
+
+profiles:
+  test:
+    description: "Test agent"
+    servers: [alpha]
+`));
+      generateAgentFiles(config, dir);
+      const content = readFileSync(join(dir, ".claude", "agents", "test.md"), "utf-8");
+      assert.ok(content.includes("name: test"));
+      assert.ok(content.includes("description: Test agent"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("includes model override when specified", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  fast:
+    description: "Fast agent"
+    servers: [s]
+    model: haiku
+`));
+      generateAgentFiles(config, dir);
+      const content = readFileSync(join(dir, ".claude", "agents", "fast.md"), "utf-8");
+      assert.ok(content.includes("model: haiku"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("handles profiles with no servers (no mcpServers in frontmatter)", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  clean:
+    description: "No MCPs"
+    servers: []
+`));
+      generateAgentFiles(config, dir);
+      const content = readFileSync(join(dir, ".claude", "agents", "clean.md"), "utf-8");
+      assert.ok(!content.includes("mcpServers:"));
+      assert.ok(content.includes("name: clean"));
+      assert.ok(content.includes("No MCPs"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("uses custom systemPrompt when profile defines one", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  custom:
+    description: "Custom prompt"
+    servers: [s]
+    systemPrompt: "Always use the MCP search tool first."
+`));
+      generateAgentFiles(config, dir);
+      const content = readFileSync(join(dir, ".claude", "agents", "custom.md"), "utf-8");
+      assert.ok(content.includes("Always use the MCP search tool first."));
+      // Should NOT include the default nudge
+      assert.ok(!content.includes("IMPORTANT INSTRUCTION OVERRIDE"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("preserves env var placeholders in mcpServers", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  s:
+    command: npx
+    args: []
+    env:
+      TOKEN: "\${MY_SECRET}"
+
+profiles:
+  envtest:
+    description: "Env var test"
+    servers: [s]
+`));
+      generateAgentFiles(config, dir);
+      const content = readFileSync(join(dir, ".claude", "agents", "envtest.md"), "utf-8");
+      assert.ok(content.includes("${MY_SECRET}"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("includes generated marker comment", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  test:
+    description: "Test"
+    servers: [s]
+`));
+      generateAgentFiles(config, dir);
+      const content = readFileSync(join(dir, ".claude", "agents", "test.md"), "utf-8");
+      assert.ok(content.includes("Generated by sub-mcp"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+});
+
+describe("generateRulesFile()", () => {
+  it("creates .claude/rules/sub-mcp.md with profile inventory", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  alpha:
+    command: node
+    args: ["a.js"]
+
+profiles:
+  docs:
+    description: "Doc lookup"
+    servers: [alpha]
+    model: haiku
+  clean:
+    description: "No MCPs"
+    servers: []
+
+defaults:
+  profile: docs
+`));
+      const filePath = generateRulesFile(config, dir);
+      assert.ok(existsSync(filePath));
+      const content = readFileSync(filePath, "utf-8");
+      assert.ok(content.includes("docs"));
+      assert.ok(content.includes("Doc lookup"));
+      assert.ok(content.includes("model: haiku"));
+      assert.ok(content.includes("clean"));
+      assert.ok(content.includes("No MCPs"));
+      assert.ok(content.includes("Default profile: **docs**"));
+      assert.ok(content.includes("Generated by sub-mcp"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+});
+
+describe("cleanGeneratedFiles()", () => {
+  it("removes files with the generated marker", () => {
+    const dir = makeTempDir();
+    try {
+      const agentsDir = join(dir, ".claude", "agents");
+      const rulesDir = join(dir, ".claude", "rules");
+      mkdirSync(agentsDir, { recursive: true });
+      mkdirSync(rulesDir, { recursive: true });
+
+      // Write a generated file
+      writeFileSync(join(agentsDir, "test.md"), "content\n<!-- Generated by sub-mcp. Do not edit manually. -->\n");
+      // Write a user-created file (no marker)
+      writeFileSync(join(agentsDir, "manual.md"), "user content\n");
+      // Write generated rules
+      writeFileSync(join(rulesDir, "sub-mcp.md"), "rules\n<!-- Generated by sub-mcp. Do not edit manually. -->\n");
+
+      const removed = cleanGeneratedFiles(dir);
+      assert.equal(removed.length, 2);
+      assert.ok(!existsSync(join(agentsDir, "test.md")));
+      assert.ok(existsSync(join(agentsDir, "manual.md"))); // preserved
+      assert.ok(!existsSync(join(rulesDir, "sub-mcp.md")));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("returns empty array when no generated files exist", () => {
+    const dir = makeTempDir();
+    try {
+      const removed = cleanGeneratedFiles(dir);
+      assert.equal(removed.length, 0);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
   });
 });
