@@ -15,8 +15,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "tsc && node --test dist/test.js"
+    "test": "tsc && node --test dist/test.js",
+    "prepare": "npm run build"
   },
+  "license": "MIT",
+  "author": "dev-boz",
+  "keywords": ["mcp", "claude-code", "subagent", "context", "token-optimization"],
   "engines": {
     "node": ">=18"
   },

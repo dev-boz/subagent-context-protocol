@@ -336,6 +336,12 @@ describe("parseArgs()", () => {
     assert.equal(result.isSubagent, false);
     assert.equal(result.hasMcpConfig, false);
   });
+
+  it('treats --print=value form as isSubagent=true', () => {
+    const result = parseArgs(["--print=do my task"]);
+    assert.equal(result.isSubagent, true);
+    assert.equal(result.hasMcpConfig, false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -545,12 +551,9 @@ describe("buildMcpJson()", () => {
     assert.equal(json, null);
   });
 
-  it("falls back to all servers for unknown profile", () => {
+  it("returns null for unknown profile (fail closed)", () => {
     const json = buildMcpJson(config, "nonexistent");
-    assert.ok(json);
-    const parsed = JSON.parse(json) as { mcpServers: Record<string, unknown> };
-    assert.ok(parsed.mcpServers["alpha"]);
-    assert.ok(parsed.mcpServers["beta"]);
+    assert.equal(json, null);
   });
 });
 
@@ -816,6 +819,35 @@ profiles:
       generateAgentFiles(config, dir);
       const content = readFileSync(join(dir, ".claude", "agents", "envtest.md"), "utf-8");
       assert.ok(content.includes("${MY_SECRET}"));
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it("skips user-created files without generated marker", () => {
+    const dir = makeTempDir();
+    try {
+      const config = loadConfig(writeTempConfig(dir, "profiles.yml", `
+mcpServers:
+  s:
+    command: npx
+    args: []
+
+profiles:
+  custom:
+    description: "Test"
+    servers: [s]
+`));
+      // Pre-create a user file without the generated marker
+      const agentsDir = join(dir, ".claude", "agents");
+      mkdirSync(agentsDir, { recursive: true });
+      writeFileSync(join(agentsDir, "custom.md"), "My custom agent file\n");
+
+      const files = generateAgentFiles(config, dir);
+      assert.equal(files.length, 0);
+      // User file should be preserved
+      const content = readFileSync(join(agentsDir, "custom.md"), "utf-8");
+      assert.equal(content, "My custom agent file\n");
     } finally {
       rmSync(dir, { recursive: true });
     }

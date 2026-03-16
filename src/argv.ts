@@ -44,6 +44,7 @@ export function parseArgs(args: string[]): ParsedArgs {
     // Handle --flag=value form
     if (arg.startsWith("--") && arg.includes("=")) {
       const flag = arg.slice(0, arg.indexOf("="));
+      if (flag === "--print") isSubagent = true;
       if (flag === "--mcp-config") hasMcpConfig = true;
       i++;
       continue;

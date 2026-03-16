@@ -63,9 +63,9 @@ export function buildMcpJson(config: CachedConfig, profileName: string | undefin
     const profile = config.profiles[profileName];
     if (!profile) {
       process.stderr.write(
-        `sub-mcp: warning: unknown profile "${profileName}", injecting all servers\n`
+        `sub-mcp: error: unknown profile "${profileName}", skipping MCP injection\n`
       );
-      return JSON.stringify({ mcpServers: config.mcpServers });
+      return null;
     }
     if (profile.servers.length === 0) return null;
     const filtered: Record<string, unknown> = {};
