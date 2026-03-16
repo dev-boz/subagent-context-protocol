@@ -122,7 +122,7 @@ profiles:
     description: "Documentation lookup via Context7"
     servers: [context7]
     model: haiku          # optional: override model for this profile
-    isolateMcp: true      # optional: only these MCPs, don't inherit parent's
+    isolateMcp: true      # optional: CLI wrapper only — only these MCPs, don't inherit parent's
   github:
     description: "GitHub operations"
     servers: [github]
@@ -142,7 +142,7 @@ defaults:
 | `description` | yes | What this profile is for |
 | `servers` | yes | List of MCP server names from `mcpServers` |
 | `model` | no | Override model (e.g. `haiku` for cheap lookups). Omit to inherit from parent. |
-| `isolateMcp` | no | If `true`, subagent only gets this profile's MCPs (passes `--strict-mcp-config`). If `false`/omitted, inherits parent MCPs + adds profile ones. |
+| `isolateMcp` | no | **CLI wrapper only.** If `true`, subagent only gets this profile's MCPs (passes `--strict-mcp-config`). If `false`/omitted, inherits parent MCPs + adds profile ones. Has no effect in interactive mode — Claude Code subagents always inherit parent MCPs. |
 | `maxBudget` | no | Max spend in USD for this profile |
 | `systemPrompt` | no | Custom system prompt for subagents using this profile |
 
