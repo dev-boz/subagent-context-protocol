@@ -27,6 +27,7 @@ const __dirname = dirname(__filename);
 
 const SUB_MCP_DIR = join(homedir(), ".sub-mcp");
 const BIN_DIR = join(SUB_MCP_DIR, "bin");
+const HOOKS_DIR = join(SUB_MCP_DIR, "hooks");
 
 /** Write to a temp file then rename — atomic on POSIX, safe for concurrent reads. */
 function atomicWrite(path: string, content: string, mode = 0o644): void {
@@ -310,6 +311,15 @@ program
       chmodSync(wrapperDst, 0o755);
       copyFileSync(join(__dirname, "argv.js"), join(BIN_DIR, "argv.js"));
 
+      // Install hooks to ~/.sub-mcp/hooks/
+      mkdirSync(HOOKS_DIR, { recursive: true });
+      const hooksSourceDir = join(__dirname, "hooks");
+      if (existsSync(hooksSourceDir)) {
+        for (const file of readdirSync(hooksSourceDir).filter(f => f.endsWith(".js"))) {
+          copyFileSync(join(hooksSourceDir, file), join(HOOKS_DIR, file));
+        }
+      }
+
       console.log(`Installed wrapper to ${wrapperDst}`);
       console.log(`Real claude: ${realClaude}`);
       console.log(`MCP servers: ${Object.keys(config.mcpServers).join(", ")}`);
@@ -348,6 +358,12 @@ program
       join(SUB_MCP_DIR, "real-claude-path"),
       join(SUB_MCP_DIR, "mcp-config.json"),
     ];
+    // Clean hooks directory
+    try {
+      if (existsSync(HOOKS_DIR)) rmSync(HOOKS_DIR, { recursive: true });
+    } catch (err) {
+      errors.push(`Failed to remove ${HOOKS_DIR}: ${(err as Error).message}`);
+    }
     for (const f of files) {
       try {
         if (existsSync(f)) rmSync(f);

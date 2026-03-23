@@ -198,6 +198,8 @@ After `sub-mcp install`, the following files are created:
 ├── bin/
 │   ├── claude                       # wrapper script (earlier in PATH)
 │   └── argv.js                      # arg parser module
+├── hooks/
+│   └── subagent-report.js           # SubagentStop hook — reports MCP tool usage
 ├── real-claude-path                 # absolute path to the real claude binary
 ├── mcp-config.json                  # pre-computed MCP config cache (no secrets)
 └── profiles.yml                     # copy of source config
@@ -214,13 +216,15 @@ After `sub-mcp install`, the following files are created:
 
 ```
 src/
-├─ wrapper.ts    Transparent claude wrapper (node builtins + argv.js only)
-├─ argv.ts       Shared arg parser and env var resolver
-├─ cli.ts        CLI: install, uninstall, refresh, agents, query, profiles, debug
-├─ config.ts     YAML config loader with validation
-├─ spawner.ts    Direct subprocess spawner (for sub-mcp query)
-├─ types.ts      TypeScript interfaces
-└─ test.ts       Test suite (node:test, 52 tests)
+├─ wrapper.ts          Transparent claude wrapper (node builtins + argv.js only)
+├─ argv.ts             Shared arg parser and env var resolver
+├─ cli.ts              CLI: install, uninstall, refresh, agents, query, profiles, debug
+├─ config.ts           YAML config loader with validation
+├─ spawner.ts          Direct subprocess spawner (for sub-mcp query)
+├─ types.ts            TypeScript interfaces
+├─ test.ts             Test suite (node:test, 52 tests)
+└─ hooks/
+   └─ subagent-report.ts  SubagentStop hook — reports MCP tool usage to stderr
 ```
 
 ## Security
@@ -260,6 +264,40 @@ sub-mcp debug
 # Test with bypass to confirm real claude still works
 SUB_MCP_BYPASS=1 claude --version
 ```
+
+## MCP usage reporting (SubagentStop hook)
+
+sub-mcp includes a `SubagentStop` hook that prints a one-line summary of MCP tool usage after each subagent completes. This gives you visibility into what MCP tools subagents actually called without cluttering the main session.
+
+**Example output** (printed to stderr):
+```
+[sub-mcp] docs agent: 3 MCP calls (resolve-library-id, get-library-docs ×2)
+```
+
+If a subagent didn't use any MCP tools, the hook stays silent.
+
+### Setup
+
+After running `sub-mcp install`, add the hook to your Claude Code settings (`~/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.sub-mcp/hooks/subagent-report.js"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook reads the subagent's transcript JSONL (provided in the hook payload's `agent_transcript_path` field), finds all `mcp__*` tool calls, and formats a summary showing which MCP tools were called and how many times.
 
 ## Troubleshooting
 
